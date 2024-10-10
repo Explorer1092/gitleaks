@@ -6,25 +6,15 @@ package utils
 
 import (
 	"github.com/rs/zerolog/log"
+	"github.com/zricethezav/gitleaks/v8/cmd/generate/config/base"
 	"github.com/zricethezav/gitleaks/v8/config"
 	"github.com/zricethezav/gitleaks/v8/detect"
 	"strings"
 )
 
-func Validate(r config.Rule, truePositives []string, falsePositives []string) *config.Rule {
-	// normalize keywords like in the config package
-	var keywords []string
-	for _, k := range r.Keywords {
-		keywords = append(keywords, strings.ToLower(k))
-	}
-	r.Keywords = keywords
-
-	rules := make(map[string]config.Rule)
-	rules[r.RuleID] = r
-	d := detect.NewDetector(config.Config{
-		Rules:    rules,
-		Keywords: keywords,
-	})
+func Validate(rule config.Rule, truePositives []string, falsePositives []string) *config.Rule {
+	r := &rule
+	d := createSingleRuleDetector(r)
 	for _, tp := range truePositives {
 		if len(d.DetectString(tp)) != 1 {
 			log.Fatal().
@@ -43,22 +33,12 @@ func Validate(r config.Rule, truePositives []string, falsePositives []string) *c
 				Msg("Failed to Validate. False positive was detected by regex.")
 		}
 	}
-	return &r
+	return r
 }
 
-func ValidateWithPaths(r config.Rule, truePositives map[string]string, falsePositives map[string]string) *config.Rule {
-	var keywords []string
-	for _, k := range r.Keywords {
-		keywords = append(keywords, strings.ToLower(k))
-	}
-	r.Keywords = keywords
-
-	rules := make(map[string]config.Rule)
-	rules[r.RuleID] = r
-	d := detect.NewDetector(config.Config{
-		Rules:    rules,
-		Keywords: keywords,
-	})
+func ValidateWithPaths(rule config.Rule, truePositives map[string]string, falsePositives map[string]string) *config.Rule {
+	r := &rule
+	d := createSingleRuleDetector(r)
 	for path, tp := range truePositives {
 		f := detect.Fragment{Raw: tp, FilePath: path}
 		if len(d.Detect(f)) != 1 {
@@ -81,5 +61,30 @@ func ValidateWithPaths(r config.Rule, truePositives map[string]string, falsePosi
 				Msg("Failed to Validate. False positive was detected by regex and/or path.")
 		}
 	}
-	return &r
+	return r
+}
+
+func createSingleRuleDetector(r *config.Rule) *detect.Detector {
+	// normalize keywords like in the config package
+	var (
+		uniqueKeywords = make(map[string]struct{})
+		keywords       []string
+	)
+	for _, keyword := range r.Keywords {
+		k := strings.ToLower(keyword)
+		if _, ok := uniqueKeywords[k]; ok {
+			continue
+		}
+		keywords = append(keywords, k)
+		uniqueKeywords[k] = struct{}{}
+	}
+	r.Keywords = keywords
+
+	rules := map[string]config.Rule{
+		r.RuleID: *r,
+	}
+	cfg := base.CreateGlobalConfig()
+	cfg.Rules = rules
+	cfg.Keywords = uniqueKeywords
+	return detect.NewDetector(cfg)
 }

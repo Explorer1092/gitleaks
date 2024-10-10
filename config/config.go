@@ -54,12 +54,13 @@ type ViperConfig struct {
 
 // Config is a configuration struct that contains rules and an allowlist if present.
 type Config struct {
+	Title       string
 	Extend      Extend
 	Path        string
 	Description string
 	Rules       map[string]Rule
 	Allowlist   Allowlist
-	Keywords    []string
+	Keywords    map[string]struct{}
 
 	// used to keep sarif results consistent
 	OrderedRules []string
@@ -75,10 +76,10 @@ type Extend struct {
 
 func (vc *ViperConfig) Translate() (Config, error) {
 	var (
-		keywords     []string
+		keywords     = make(map[string]struct{})
 		orderedRules []string
+		rulesMap     = make(map[string]Rule)
 	)
-	rulesMap := make(map[string]Rule)
 
 	for _, r := range vc.Rules {
 		var allowlistRegexes []*regexp.Regexp
@@ -94,7 +95,7 @@ func (vc *ViperConfig) Translate() (Config, error) {
 			r.Keywords = []string{}
 		} else {
 			for _, k := range r.Keywords {
-				keywords = append(keywords, strings.ToLower(k))
+				keywords[strings.ToLower(k)] = struct{}{}
 			}
 		}
 
@@ -245,16 +246,24 @@ func (c *Config) extend(extensionConfig Config) {
 		if !ok {
 			// Rule doesn't exist, add it to the config.
 			c.Rules[ruleID] = baseRule
-			c.Keywords = append(c.Keywords, baseRule.Keywords...)
+			for _, k := range baseRule.Keywords {
+				c.Keywords[k] = struct{}{}
+			}
 			c.OrderedRules = append(c.OrderedRules, ruleID)
 		} else {
 			// Rule exists, merge our changes into the base.
 			baseRule.Allowlist.Commits = append(baseRule.Allowlist.Commits, currentRule.Allowlist.Commits...)
 			baseRule.Allowlist.Paths = append(baseRule.Allowlist.Paths, currentRule.Allowlist.Paths...)
 			baseRule.Allowlist.Regexes = append(baseRule.Allowlist.Regexes, currentRule.Allowlist.Regexes...)
+			baseRule.Allowlist.RegexTarget = currentRule.Allowlist.RegexTarget
 			baseRule.Allowlist.StopWords = append(baseRule.Allowlist.StopWords, currentRule.Allowlist.StopWords...)
-
-			delete(c.Rules, ruleID)
+			// The keywords from the base rule and the extended rule must be merged into the global keywords list
+			for _, k := range baseRule.Keywords {
+				c.Keywords[k] = struct{}{}
+			}
+			for _, k := range currentRule.Keywords {
+				c.Keywords[k] = struct{}{}
+			}
 			c.Rules[ruleID] = baseRule
 		}
 	}
