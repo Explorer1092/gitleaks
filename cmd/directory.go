@@ -3,10 +3,9 @@ package cmd
 import (
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
-	"github.com/zricethezav/gitleaks/v8/report"
+	"github.com/zricethezav/gitleaks/v8/logging"
 	"github.com/zricethezav/gitleaks/v8/sources"
 )
 
@@ -31,11 +30,10 @@ func runDirectory(cmd *cobra.Command, args []string) {
 			source = "."
 		}
 	}
+
 	initConfig(source)
-	var (
-		findings []report.Finding
-		err      error
-	)
+	initDiagnostics()
+	var err error
 
 	// setup config (aka, the thing that defines rules)
 	cfg := Config(cmd)
@@ -45,23 +43,32 @@ func runDirectory(cmd *cobra.Command, args []string) {
 
 	detector := Detector(cmd, cfg, source)
 
+	// set follow symlinks flag
+	if detector.FollowSymlinks, err = cmd.Flags().GetBool("follow-symlinks"); err != nil {
+		logging.Fatal().Err(err).Send()
+	}
+
 	// set exit code
 	exitCode, err := cmd.Flags().GetInt("exit-code")
 	if err != nil {
-		log.Fatal().Err(err).Msg("could not get exit code")
+		logging.Fatal().Err(err).Msg("could not get exit code")
 	}
 
-	var paths <-chan sources.ScanTarget
-	paths, err = sources.DirectoryTargets(source, detector.Sema, detector.FollowSymlinks)
+	findings, err := detector.DetectSource(
+		cmd.Context(),
+		&sources.Files{
+			Config:          &cfg,
+			FollowSymlinks:  detector.FollowSymlinks,
+			MaxFileSize:     detector.MaxTargetMegaBytes * 1_000_000,
+			Path:            source,
+			Sema:            detector.Sema,
+			MaxArchiveDepth: detector.MaxArchiveDepth,
+		},
+	)
+
 	if err != nil {
-		log.Fatal().Err(err)
+		logging.Error().Err(err).Msg("failed scan directory")
 	}
 
-	findings, err = detector.DetectFiles(paths)
-	if err != nil {
-		// don't exit on error, just log it
-		log.Error().Err(err).Msg("failed scan directory")
-	}
-
-	findingSummaryAndExit(findings, cmd, cfg, exitCode, start, err)
+	findingSummaryAndExit(detector, findings, exitCode, start, err)
 }

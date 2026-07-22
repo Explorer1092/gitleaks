@@ -1,9 +1,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"regexp"
 	"strings"
+
+	"github.com/zricethezav/gitleaks/v8/regexp"
 )
 
 // Rules contain information that define details on how to detect secrets
@@ -39,30 +41,50 @@ type Rule struct {
 	// keyword(s) are in the content being scanned.
 	Keywords []string
 
-	// Allowlist allows a rule to be ignored for specific
-	// regexes, paths, and/or commits
-	Allowlist Allowlist
+	// Allowlists allows a rule to be ignored for specific commits, paths, regexes, and/or stopwords.
+	Allowlists []*Allowlist
+
+	// validated is an internal flag to track whether `Validate()` has been called.
+	validated bool
+
+	// If a rule has RequiredRules, it makes the rule dependent on the RequiredRules.
+	// In otherwords, this rule is now a composite rule.
+	RequiredRules []*Required
+
+	SkipReport bool
+}
+
+type Required struct {
+	RuleID        string
+	WithinLines   *int
+	WithinColumns *int
 }
 
 // Validate guards against common misconfigurations.
-func (r Rule) Validate() error {
+func (r *Rule) Validate() error {
+	if r.validated {
+		return nil
+	}
+
 	// Ensure |id| is present.
 	if strings.TrimSpace(r.RuleID) == "" {
 		// Try to provide helpful context, since |id| is empty.
-		var context string
-		if r.Regex != nil {
-			context = ", regex: " + r.Regex.String()
-		} else if r.Path != nil {
-			context = ", path: " + r.Path.String()
-		} else if r.Description != "" {
-			context = ", description: " + r.Description
+		var sb strings.Builder
+		if r.Description != "" {
+			sb.WriteString(", description: " + r.Description)
 		}
-		return fmt.Errorf("rule |id| is missing or empty" + context)
+		if r.Regex != nil {
+			sb.WriteString(", regex: " + r.Regex.String())
+		}
+		if r.Path != nil {
+			sb.WriteString(", path: " + r.Path.String())
+		}
+		return errors.New("rule |id| is missing or empty" + sb.String())
 	}
 
 	// Ensure the rule actually matches something.
 	if r.Regex == nil && r.Path == nil {
-		return fmt.Errorf("%s: both |regex| and |path| are empty, this rule will have no effect", r.RuleID)
+		return errors.New(r.RuleID + ": both |regex| and |path| are empty, this rule will have no effect")
 	}
 
 	// Ensure |secretGroup| works.
@@ -70,5 +92,16 @@ func (r Rule) Validate() error {
 		return fmt.Errorf("%s: invalid regex secret group %d, max regex secret group %d", r.RuleID, r.SecretGroup, r.Regex.NumSubexp())
 	}
 
+	for _, allowlist := range r.Allowlists {
+		// This will probably never happen.
+		if allowlist == nil {
+			continue
+		}
+		if err := allowlist.Validate(); err != nil {
+			return fmt.Errorf("%s: %w", r.RuleID, err)
+		}
+	}
+
+	r.validated = true
 	return nil
 }

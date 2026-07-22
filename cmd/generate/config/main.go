@@ -2,12 +2,13 @@ package main
 
 import (
 	"os"
+	"slices"
 	"text/template"
 
-	"github.com/rs/zerolog/log"
-
+	"github.com/zricethezav/gitleaks/v8/cmd/generate/config/base"
 	"github.com/zricethezav/gitleaks/v8/cmd/generate/config/rules"
 	"github.com/zricethezav/gitleaks/v8/config"
+	"github.com/zricethezav/gitleaks/v8/logging"
 )
 
 const (
@@ -18,25 +19,35 @@ const (
 
 func main() {
 	if len(os.Args) < 2 {
-		os.Stderr.WriteString("Specify path to the gitleaks.toml config\n")
+		_, _ = os.Stderr.WriteString("Specify path to the gitleaks.toml config\n")
 		os.Exit(2)
 	}
 	gitleaksConfigPath := os.Args[1]
 
 	configRules := []*config.Rule{
+		rules.OnePasswordSecretKey(),
+		rules.OnePasswordServiceAccountToken(),
 		rules.AdafruitAPIKey(),
 		rules.AdobeClientID(),
 		rules.AdobeClientSecret(),
 		rules.AgeSecretKey(),
-		rules.Airtable(),
+		rules.AirtableApiKey(),
+		rules.AirtablePersonalAccessToken(),
 		rules.AlgoliaApiKey(),
 		rules.AlibabaAccessKey(),
 		rules.AlibabaSecretKey(),
+		rules.AmazonBedrockAPIKeyLongLived(),
+		rules.AmazonBedrockAPIKeyShortLived(),
+		rules.AnthropicAdminApiKey(),
+		rules.AnthropicApiKey(),
+		rules.ArtifactoryApiKey(),
+		rules.ArtifactoryReferenceToken(),
 		rules.AsanaClientID(),
 		rules.AsanaClientSecret(),
 		rules.Atlassian(),
 		rules.Authress(),
 		rules.AWS(),
+		rules.AzureActiveDirectoryClientSecret(),
 		rules.BitBucketClientID(),
 		rules.BitBucketClientSecret(),
 		rules.BittrexAccessKey(),
@@ -44,13 +55,17 @@ func main() {
 		rules.Beamer(),
 		rules.CodecovAccessToken(),
 		rules.CoinbaseAccessToken(),
+		rules.ClickHouseCloud(),
 		rules.Clojars(),
 		rules.CloudflareAPIKey(),
 		rules.CloudflareGlobalAPIKey(),
 		rules.CloudflareOriginCAKey(),
+		rules.CohereAPIToken(),
 		rules.ConfluentAccessToken(),
 		rules.ConfluentSecretKey(),
 		rules.Contentful(),
+		rules.CurlHeaderAuth(),
+		rules.CurlBasicAuth(),
 		rules.Databricks(),
 		rules.DatadogtokenAccessToken(),
 		rules.DefinedNetworkingAPIToken(),
@@ -83,6 +98,7 @@ func main() {
 		rules.FlutterwaveEncKey(),
 		rules.FlyIOAccessToken(),
 		rules.FrameIO(),
+		rules.Freemius(),
 		rules.FreshbooksAccessToken(),
 		rules.GoCardless(),
 		// TODO figure out what makes sense for GCP
@@ -93,9 +109,21 @@ func main() {
 		rules.GitHubOauth(),
 		rules.GitHubApp(),
 		rules.GitHubRefresh(),
+		rules.GitlabCiCdJobToken(),
+		rules.GitlabDeployToken(),
+		rules.GitlabFeatureFlagClientToken(),
+		rules.GitlabFeedToken(),
+		rules.GitlabIncomingMailToken(),
+		rules.GitlabKubernetesAgentToken(),
+		rules.GitlabOauthAppSecret(),
 		rules.GitlabPat(),
+		rules.GitlabPatRoutable(),
 		rules.GitlabPipelineTriggerToken(),
 		rules.GitlabRunnerRegistrationToken(),
+		rules.GitlabRunnerAuthenticationToken(),
+		rules.GitlabRunnerAuthenticationTokenRoutable(),
+		rules.GitlabScimToken(),
+		rules.GitlabSessionCookie(),
 		rules.GitterAccessToken(),
 		rules.GrafanaApiKey(),
 		rules.GrafanaCloudApiToken(),
@@ -104,6 +132,7 @@ func main() {
 		rules.HashiCorpTerraform(),
 		rules.HashicorpField(),
 		rules.Heroku(),
+		rules.HerokuV2(),
 		rules.HubSpot(),
 		rules.HuggingFaceAccessToken(),
 		rules.HuggingFaceOrganizationApiToken(),
@@ -124,12 +153,16 @@ func main() {
 		rules.LinkedinClientSecret(),
 		rules.LobAPIToken(),
 		rules.LobPubAPIToken(),
+		rules.LookerClientID(),
+		rules.LookerClientSecret(),
 		rules.MailChimp(),
 		rules.MailGunPubAPIToken(),
 		rules.MailGunPrivateAPIToken(),
 		rules.MailGunSigningKey(),
 		rules.MapBox(),
 		rules.MattermostAccessToken(),
+		rules.MaxMindLicenseKey(),
+		rules.Meraki(),
 		rules.MessageBirdAPIToken(),
 		rules.MessageBirdClientID(),
 		rules.NetlifyAccessToken(),
@@ -137,11 +170,15 @@ func main() {
 		rules.NewRelicUserKey(),
 		rules.NewRelicBrowserAPIKey(),
 		rules.NewRelicInsertKey(),
+		rules.Notion(),
 		rules.NPM(),
+		rules.NugetConfigPassword(),
 		rules.NytimesAccessToken(),
+		rules.OctopusDeployApiKey(),
 		rules.OktaAccessToken(),
 		rules.OpenAI(),
 		rules.OpenshiftUserToken(),
+		rules.PerplexityAPIKey(),
 		rules.PlaidAccessID(),
 		rules.PlaidSecretKey(),
 		rules.PlaidAccessToken(),
@@ -150,7 +187,9 @@ func main() {
 		rules.PlanetScaleOAuthToken(),
 		rules.PostManAPI(),
 		rules.Prefect(),
+		rules.PrivateAIToken(),
 		rules.PrivateKey(),
+		rules.PrivateKeyPKCS12File(),
 		rules.PulumiAPIToken(),
 		rules.PyPiUploadToken(),
 		rules.RapidAPIAccessToken(),
@@ -162,6 +201,11 @@ func main() {
 		rules.SendGridAPIToken(),
 		rules.SendInBlueAPIToken(),
 		rules.SentryAccessToken(),
+		rules.SentryOrgToken(),
+		rules.SentryUserToken(),
+		rules.SettlemintApplicationAccessToken(),
+		rules.SettlemintPersonalAccessToken(),
+		rules.SettlemintServiceAccessToken(),
 		rules.ShippoAPIToken(),
 		rules.ShopifyAccessToken(),
 		rules.ShopifyCustomAccessToken(),
@@ -179,6 +223,8 @@ func main() {
 		rules.SlackLegacyToken(),
 		rules.SlackWebHookUrl(),
 		rules.Snyk(),
+		rules.Sonar(),
+		rules.SourceGraph(),
 		rules.StripeAccessToken(),
 		rules.SquareAccessToken(),
 		rules.SquareSpaceAccessToken(),
@@ -208,27 +254,48 @@ func main() {
 	// ensure rules have unique ids
 	ruleLookUp := make(map[string]config.Rule, len(configRules))
 	for _, rule := range configRules {
+		if err := rule.Validate(); err != nil {
+			logging.Fatal().Err(err).
+				Str("rule-id", rule.RuleID).
+				Msg("Failed to validate rule")
+		}
+
 		// check if rule is in ruleLookUp
 		if _, ok := ruleLookUp[rule.RuleID]; ok {
-			log.Fatal().Msgf("rule id %s is not unique", rule.RuleID)
+			logging.Fatal().
+				Str("rule-id", rule.RuleID).
+				Msg("rule id is not unique")
 		}
 		// TODO: eventually change all the signatures to get ride of this
 		// nasty dereferencing.
 		ruleLookUp[rule.RuleID] = *rule
+
+		// Slices are de-duplicated with a map, every iteration has a different order.
+		// This is an awkward workaround.
+		for _, allowlist := range rule.Allowlists {
+			slices.Sort(allowlist.Commits)
+			slices.Sort(allowlist.StopWords)
+		}
 	}
 
 	tmpl, err := template.ParseFiles(templatePath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to parse template")
+		logging.Fatal().Err(err).Msg("Failed to parse template")
 	}
 
 	f, err := os.Create(gitleaksConfigPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create rules.toml")
+		logging.Fatal().Err(err).Msg("Failed to create rules.toml")
 	}
+	defer f.Close()
 
-	if err = tmpl.Execute(f, config.Config{Rules: ruleLookUp}); err != nil {
-		log.Fatal().Err(err).Msg("could not execute template")
+	cfg := base.CreateGlobalConfig()
+	cfg.Rules = ruleLookUp
+	for _, allowlist := range cfg.Allowlists {
+		slices.Sort(allowlist.Commits)
+		slices.Sort(allowlist.StopWords)
 	}
-
+	if err = tmpl.Execute(f, cfg); err != nil {
+		logging.Fatal().Err(err).Msg("could not execute template")
+	}
 }
